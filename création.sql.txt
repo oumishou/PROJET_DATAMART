@@ -1,0 +1,37 @@
+-- Création de la table de dimension pour ratecode dans DataMart
+CREATE TABLE IF NOT EXISTS dim_ratecode (
+    ratecodeid INT PRIMARY KEY,
+    ratecodedescription TEXT
+);
+
+-- Création de la table de dimension pour payment dans DataMart
+CREATE TABLE IF NOT EXISTS dim_payment (
+    payment_type INT PRIMARY KEY,
+    paymentdescription TEXT
+);
+
+-- Création de la table de faits taxi jaune dans DataMart
+CREATE TABLE IF NOT EXISTS fact_taxi_ride (
+    vendorid INT,
+    tpep_pickup_datetime TIMESTAMP (6),
+    tpep_dropoff_datetime TIMESTAMP (6),
+    passenger_count FLOAT,
+    trip_distance FLOAT,
+    pulocationid INT,
+    dolocationid INT,
+    ratecodeid INT,
+    store_and_fwd_flag TEXT,
+    payment_type INT,
+    fare_amount FLOAT,
+    extra FLOAT,
+    mta_tax FLOAT,
+    improvement_surcharge FLOAT,
+    tip_amount FLOAT,
+    tolls_amount FLOAT,
+    total_amount FLOAT,
+    congestion_surcharge FLOAT,
+    airport_fee FLOAT,
+    PRIMARY KEY (vendorid, tpep_pickup_datetime, tpep_dropoff_datetime),
+    FOREIGN KEY (ratecodeid) REFERENCES dim_ratecode(ratecodeid),
+    FOREIGN KEY (payment_type) REFERENCES dim_payment(payment_type)
+);

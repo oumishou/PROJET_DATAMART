@@ -1,0 +1,79 @@
+*********************INSERTIONS DES TABLES DIMENSIONS ET LA TABLE DE FAIT*********************
+
+-- Connexion à oumou_warehouse
+CREATE EXTENSION IF NOT EXISTS dblink;
+SELECT dblink_connect('oumou_warehouse_conn', 'dbname=oumou_warehouse');
+
+-- Récupération des données de la table
+CREATE TEMP TABLE temp_data AS
+SELECT *
+FROM dblink('oumou_warehouse_conn', 'SELECT * FROM oumou_raw') 
+AS t(vendorid INT, tpep_pickup_datetime TIMESTAMP (6), tpep_dropoff_datetime TIMESTAMP(6), passenger_count FLOAT, trip_distance FLOAT, ratecodeid INT,
+     store_and_fwd_flag TEXT, pulocationid INT, dolocationid INT, payment_type INT, fare_amount FLOAT, extra FLOAT, mta_tax FLOAT,
+     tip_amount FLOAT, tolls_amount FLOAT, improvement_surcharge FLOAT, total_amount FLOAT, congestion_surcharge FLOAT, airport_fee FLOAT);
+
+-- Affichage des données récupérées
+SELECT * FROM temp_data limit 10;
+
+
+-- Fonction de mappage pour la colonne paymentdescription
+CREATE OR REPLACE FUNCTION map_payment_description(payment_type INT)
+RETURNS TEXT AS $$
+BEGIN
+    CASE payment_type
+        WHEN 1 THEN RETURN 'Carte de crédit';
+        WHEN 2 THEN RETURN 'Espèces';
+        WHEN 3 THEN RETURN 'Gratuit';
+        WHEN 4 THEN RETURN 'Contestation';
+        WHEN 5 THEN RETURN 'Inconnu';
+        WHEN 6 THEN RETURN 'Trajet annulé';
+        ELSE RETURN 'Non spécifié';
+    END CASE;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Fonction de mappage pour la colonne ratecodedescription
+CREATE OR REPLACE FUNCTION map_ratecode_description(ratecodeid INT)
+RETURNS TEXT AS $$
+BEGIN
+    CASE ratecodeid
+        WHEN 1 THEN RETURN 'Standard rate';
+        WHEN 2 THEN RETURN 'JFK';
+        WHEN 3 THEN RETURN 'Newark';
+        WHEN 4 THEN RETURN 'Nassau or Westchester';
+        WHEN 5 THEN RETURN 'Negotiated fare';
+        WHEN 6 THEN RETURN 'Group ride';
+        ELSE RETURN 'Unknown';
+    END CASE;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Insertion des données dans la table dim_payment depuis temp_data
+INSERT INTO dim_payment (payment_type, paymentdescription)
+SELECT DISTINCT payment_type, map_payment_description(payment_type)
+FROM temp_data
+WHERE payment_type IS NOT NULL
+ON CONFLICT (payment_type) DO UPDATE SET paymentdescription = EXCLUDED.paymentdescription;
+
+-- Insertion des données dans la table dim_ratecode depuis temp_data
+INSERT INTO dim_ratecode (ratecodeid, ratecodedescription)
+SELECT DISTINCT ratecodeid, map_ratecode_description(ratecodeid)
+FROM temp_data
+WHERE ratecodeid IS NOT NULL
+ON CONFLICT (ratecodeid) DO UPDATE SET ratecodedescription = EXCLUDED.ratecodedescription;
+
+-- Insertion des données  dans la table fact_taxi_ride depuis temp_data
+INSERT INTO fact_taxi_ride (vendorid, tpep_pickup_datetime, tpep_dropoff_datetime, passenger_count,
+                             trip_distance, pulocationid, dolocationid, ratecodeid, store_and_fwd_flag, payment_type,
+                             fare_amount, extra, mta_tax, improvement_surcharge, tip_amount, tolls_amount, total_amount,
+                             congestion_surcharge, airport_fee)
+SELECT DISTINCT vendorid, tpep_pickup_datetime, tpep_dropoff_datetime, passenger_count,
+                trip_distance, pulocationid, dolocationid, ratecodeid, store_and_fwd_flag, payment_type,
+                fare_amount, extra, mta_tax, improvement_surcharge, tip_amount, tolls_amount, total_amount,
+                congestion_surcharge, airport_fee
+FROM temp_data
+ON CONFLICT DO NOTHING; -- Ignore les doublons lors de l'insertion
+
+
+-- Fermeture de la connexion dblink
+SELECT dblink_disconnect('oumou_warehouse_conn');
